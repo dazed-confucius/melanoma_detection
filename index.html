@@ -40,14 +40,14 @@
             </div>
 
             <div id="dropZone" class="drop-zone mt-6 rounded-3xl border-2 border-dashed border-slate-300 bg-slate-50 p-6 text-center transition hover:border-slate-400 hover:bg-slate-100">
-              <p class="text-slate-500">Drag and drop a .jpg or .jpeg file here</p>
+              <p class="text-slate-500">Drag and drop a .jpg, .jpeg, or .png file here</p>
               <p class="mt-2 text-sm text-slate-400">or use the file selector below.</p>
             </div>
 
             <div class="mt-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <label class="block w-full sm:w-auto">
-                <span class="sr-only">Upload first JPEG image</span>
-                <input id="fileInput" type="file" accept="image/jpeg" class="block w-full cursor-pointer rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 transition hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300 sm:w-80" />
+                <span class="sr-only">Upload first JPEG or PNG image</span>
+                <input id="fileInput" type="file" accept="image/jpeg,image/png" class="block w-full cursor-pointer rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 transition hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300 sm:w-80" />
               </label>
               <button id="analyzeButton" class="inline-flex w-full items-center justify-center rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-500 sm:w-auto" disabled>Analyze</button>
             </div>
@@ -64,14 +64,14 @@
             </div>
 
             <div id="dropZone2" class="drop-zone mt-6 rounded-3xl border-2 border-dashed border-slate-300 bg-slate-50 p-6 text-center transition hover:border-slate-400 hover:bg-slate-100">
-              <p class="text-slate-500">Drag and drop a second .jpg or .jpeg file here</p>
+              <p class="text-slate-500">Drag and drop a second .jpg, .jpeg, or .png file here</p>
               <p class="mt-2 text-sm text-slate-400">or use the file selector below.</p>
             </div>
 
             <div class="mt-6">
               <label class="block w-full sm:w-auto">
-                <span class="sr-only">Upload second JPEG image</span>
-                <input id="fileInput2" type="file" accept="image/jpeg" class="block w-full cursor-pointer rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 transition hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300 sm:w-80" />
+                <span class="sr-only">Upload second JPEG or PNG image</span>
+                <input id="fileInput2" type="file" accept="image/jpeg,image/png" class="block w-full cursor-pointer rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 transition hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300 sm:w-80" />
               </label>
             </div>
           </div>
@@ -87,7 +87,8 @@
                 <canvas id="previewCanvas2" width="400" height="400" class="w-full rounded-3xl border border-slate-200 bg-slate-100" aria-label="Secondary mole preview"></canvas>
               </div>
             </div>
-            <div class="mt-4 text-sm text-slate-500">If a second image is provided, the evolution section compares ABCD criteria across the two uploads.</div>
+            <div class="mt-4 text-sm text-slate-500">Preview area maintains aspect ratio. If the image is smaller than 50px, the app will still attempt analysis but may be unreliable.</div>
+            <div class="text-sm font-medium text-slate-700">Supported formats: .jpg, .jpeg, .png only.</div>
           </div>
         </div>
 
@@ -139,8 +140,8 @@
       resultSummary.innerHTML = '';
     }
 
-    function isValidJpeg(file) {
-      return file && file.type === 'image/jpeg';
+    function isValidImage(file) {
+      return file && (file.type === 'image/jpeg' || file.type === 'image/png');
     }
 
     function handleFile(file, index = 1) {
@@ -150,8 +151,8 @@
         if (index === 1) analyzeButton.disabled = true;
         return;
       }
-      if (!isValidJpeg(file)) {
-        setMessage('Please upload a JPEG image file (.jpg or .jpeg).');
+      if (!isValidImage(file)) {
+        setMessage('Please upload a JPEG or PNG image file (.jpg, .jpeg, or .png).');
         if (index === 1) analyzeButton.disabled = true;
         return;
       }
@@ -170,7 +171,7 @@
           setMessage('', false);
         };
         img.onerror = () => {
-          setMessage('Unable to load the JPEG image.');
+          setMessage('Unable to load the image.');
           if (index === 1) analyzeButton.disabled = true;
         };
         img.src = reader.result;
@@ -201,12 +202,12 @@
       }
       const firstResult = analyzeSingleImage(loadedImage);
       if (!firstResult || !firstResult.stats || firstResult.stats.moleCount === 0) {
-        setMessage('No distinct mole region detected in the first image. Try a clearer JPEG image with a visible lesion.', true);
+        setMessage('No distinct mole region detected in the first image. Try a clearer image with a visible lesion.', true);
         return;
       }
       const secondResult = loadedImage2 ? analyzeSingleImage(loadedImage2) : null;
       const evolution = secondResult ? compareEvolution(firstResult, secondResult) : {
-        note: 'Evolution requires comparison with previous images over time. Upload a second image to compare ABCD changes.',
+        note: 'Upload a second image to enable Evolution comparison.',
         badge: 'Monitor',
         tone: 'bg-amber-100 text-amber-700',
       };
@@ -239,7 +240,7 @@
     function compareEvolution(first, second) {
       if (!second || !second.stats || second.stats.moleCount === 0) {
         return {
-          note: 'No second image available or no mole detected in the second image. Evolution comparison is not possible.',
+          note: 'Upload a second image to enable Evolution comparison.',
           badge: 'Monitor',
           tone: 'bg-amber-100 text-amber-700',
         };
@@ -248,25 +249,26 @@
       if (first.asymmetry.label !== second.asymmetry.label) {
         changes.push(`Asymmetry changed from ${first.asymmetry.label.toLowerCase()} to ${second.asymmetry.label.toLowerCase()}.`);
       } else {
-        changes.push(`Asymmetry appears stable as ${first.asymmetry.label.toLowerCase()}.`);
+        changes.push(`Asymmetry remains ${first.asymmetry.label.toLowerCase()}.`);
       }
       if (first.border.label !== second.border.label) {
         changes.push(`Border changed from ${first.border.label.toLowerCase()} to ${second.border.label.toLowerCase()}.`);
       } else {
-        changes.push(`Border appears stable as ${first.border.label.toLowerCase()}.`);
+        changes.push(`Border remains ${first.border.label.toLowerCase()}.`);
       }
-      if (first.color.label !== second.color.label || first.color.hueBucket !== second.color.hueBucket) {
-        changes.push(`Color shifted from ${first.color.label.toLowerCase()} (${first.color.hueBucket}) to ${second.color.label.toLowerCase()} (${second.color.hueBucket}).`);
+      if (first.color.label !== second.color.label) {
+        changes.push(`Color changed from ${first.color.label.toLowerCase()} to ${second.color.label.toLowerCase()}.`);
       } else {
-        changes.push(`Color appearance appears stable as ${first.color.label.toLowerCase()} (${first.color.hueBucket}).`);
+        changes.push(`Color remains ${first.color.label.toLowerCase()}.`);
       }
       if (first.diameter.label !== second.diameter.label) {
         changes.push(`Diameter changed from ${first.diameter.label.toLowerCase()} to ${second.diameter.label.toLowerCase()}.`);
       } else {
-        changes.push(`Diameter appears stable as ${first.diameter.label.toLowerCase()}.`);
+        changes.push(`Diameter remains ${first.diameter.label.toLowerCase()}.`);
       }
+      const summary = changes.join(' ') + ' Track these changes with your dermatologist.';
       return {
-        note: changes.join(' '),
+        note: summary,
         badge: 'Monitor',
         tone: 'bg-amber-100 text-amber-700',
       };
@@ -571,7 +573,7 @@
         {
           letter: 'C',
           title: 'Color',
-          value: `${primary.color.label} (${primary.color.hueBucket})`,
+          value: primary.color.label,
           text: primary.color.interpretation,
           badge: primary.color.badge,
           tone: primary.color.tone,
