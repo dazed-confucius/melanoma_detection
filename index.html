@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mole Detection ABCDE Analyzer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root {
+      color-scheme: light;
+    }
+    .drop-zone {
+      min-height: 180px;
+    }
+    .badge {
+      border-radius: 9999px;
+      padding: 0.4rem 0.8rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 antialiased">
+  <div class="min-h-screen px-4 py-8 sm:px-6 lg:px-8">
+    <div class="mx-auto max-w-5xl">
+      <header class="mb-8 text-center">
+        <p class="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">Client-side skin mole analysis</p>
+        <h1 class="mt-3 text-3xl font-semibold text-slate-900 sm:text-4xl">ABCDE Mole Analysis Demo</h1>
+        <p class="mt-2 text-slate-600 sm:text-lg">Upload a JPEG image of a skin mole and get a basic qualitative analysis based on the dermatological ABCDE mnemonic.</p>
+      </header>
+
+      <section class="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+        <div class="space-y-6">
+          <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <h2 class="text-xl font-semibold text-slate-900">Image Upload</h2>
+                <p class="mt-2 text-sm text-slate-500">Drop a JPEG or choose a file below. The preview and analysis run entirely in the browser.</p>
+              </div>
+            </div>
+
+            <div id="dropZone" class="drop-zone mt-6 rounded-3xl border-2 border-dashed border-slate-300 bg-slate-50 p-6 text-center transition hover:border-slate-400 hover:bg-slate-100">
+              <p class="text-slate-500">Drag and drop a .jpg or .jpeg file here</p>
+              <p class="mt-2 text-sm text-slate-400">or use the file selector below.</p>
+            </div>
+
+            <div class="mt-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <label class="block w-full sm:w-auto">
+                <span class="sr-only">Upload JPEG image</span>
+                <input id="fileInput" type="file" accept="image/jpeg" class="block w-full cursor-pointer rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 transition hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300 sm:w-80" />
+              </label>
+              <button id="analyzeButton" class="inline-flex w-full items-center justify-center rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-500 sm:w-auto" disabled>Analyze</button>
+            </div>
+
+            <div id="message" class="mt-4 min-h-[1.5rem] text-sm text-red-600"></div>
+          </div>
+
+          <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div class="flex flex-col items-center gap-4 text-center sm:flex-row sm:text-left">
+              <canvas id="previewCanvas" width="400" height="400" class="max-w-full rounded-3xl border border-slate-200 bg-slate-100" aria-label="Uploaded mole preview"></canvas>
+              <div class="space-y-2 sm:flex-1">
+                <p class="text-sm text-slate-500">Preview area maintains aspect ratio. If the image is smaller than 50px, the app will still attempt analysis but may be unreliable.</p>
+                <p class="text-sm font-medium text-slate-700">Supported formats: .jpg, .jpeg only.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="space-y-6">
+          <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div class="space-y-4">
+              <div class="rounded-3xl bg-rose-50 p-4">
+                <p class="font-semibold text-rose-800">Disclaimer</p>
+                <p class="mt-2 text-sm text-rose-700">This tool is for educational purposes only and is <strong>NOT</strong> a medical diagnostic tool. Always consult a licensed dermatologist for any skin concerns.</p>
+              </div>
+              <div id="resultSummary" class="space-y-3"></div>
+            </div>
+          </div>
+
+          <div id="analysisDetails" class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm hidden">
+            <h2 class="text-xl font-semibold text-slate-900">Analysis details</h2>
+            <div id="resultCards" class="mt-6 space-y-4"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const fileInput = document.getElementById('fileInput');
+    const dropZone = document.getElementById('dropZone');
+    const analyzeButton = document.getElementById('analyzeButton');
+    const previewCanvas = document.getElementById('previewCanvas');
+    const messageEl = document.getElementById('message');
+    const resultSummary = document.getElementById('resultSummary');
+    const analysisDetails = document.getElementById('analysisDetails');
+    const resultCards = document.getElementById('resultCards');
+    const previewCtx = previewCanvas.getContext('2d');
+    let loadedImage = null;
+
+    function setMessage(text, isError = true) {
+      messageEl.textContent = text;
+      messageEl.className = isError ? 'mt-4 text-sm text-red-600' : 'mt-4 text-sm text-slate-600';
+    }
+
+    function clearAnalysis() {
+      analysisDetails.classList.add('hidden');
+      resultCards.innerHTML = '';
+      resultSummary.innerHTML = '';
+    }
+
+    function isValidJpeg(file) {
+      return file && file.type === 'image/jpeg';
+    }
+
+    function handleFile(file) {
+      clearAnalysis();
+      if (!file) {
+        setMessage('No file selected.');
+        analyzeButton.disabled = true;
+        return;
+      }
+      if (!isValidJpeg(file)) {
+        setMessage('Please upload a JPEG image file (.jpg or .jpeg).');
+        analyzeButton.disabled = true;
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          loadedImage = img;
+          drawPreview(img);
+          setMessage('', false);
+          analyzeButton.disabled = false;
+        };
+        img.onerror = () => {
+          setMessage('Unable to load the JPEG image.');
+          analyzeButton.disabled = true;
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function drawPreview(img) {
+      const maxSize = 400;
+      const aspect = img.width / img.height;
+      let drawWidth = maxSize;
+      let drawHeight = maxSize;
+      if (aspect > 1) {
+        drawHeight = Math.round(maxSize / aspect);
+      } else {
+        drawWidth = Math.round(maxSize * aspect);
+      }
+      previewCanvas.width = drawWidth;
+      previewCanvas.height = drawHeight;
+      previewCtx.clearRect(0, 0, drawWidth, drawHeight);
+      previewCtx.drawImage(img, 0, 0, drawWidth, drawHeight);
+    }
+
+    function analyzeImage() {
+      if (!loadedImage) {
+        setMessage('Upload an image before analysis.');
+        return;
+      }
+      const offscreen = document.createElement('canvas');
+      offscreen.width = loadedImage.width;
+      offscreen.height = loadedImage.height;
+      const ctx = offscreen.getContext('2d');
+      ctx.drawImage(loadedImage, 0, 0);
+      const width = offscreen.width;
+      const height = offscreen.height;
+      if (width < 50 || height < 50) {
+        setMessage('Image is very small; analysis may be unreliable, but results are still provided.', false);
+      } else {
+        setMessage('', false);
+      }
+      const imageData = ctx.getImageData(0, 0, width, height);
+      const { mask, stats } = buildMoleMask(imageData);
+      if (!mask || stats.moleCount === 0) {
+        setMessage('No distinct mole region detected. Try a clearer JPEG image with a visible lesion.', true);
+        return;
+      }
+      const bbox = getBoundingBox(mask, width, height);
+      if (!bbox) {
+        setMessage('No mole region detected. Try another image.', true);
+        return;
+      }
+      const asymmetry = analyzeAsymmetry(mask, width, height, bbox);
+      const border = analyzeBorder(mask, width, height, bbox);
+      const color = analyzeColor(imageData, mask);
+      const diameter = analyzeDiameter(bbox);
+      const evolution = {
+        note: 'Evolution requires comparison with previous images over time. Track changes in size, shape, or color with your dermatologist.',
+        badge: 'Monitor',
+        tone: 'bg-amber-100 text-amber-700',
+      };
+      if (asymmetry.score <= 0.2 && border.ratio <= 2.0 && color.score <= 30) {
+        evolution.badge = 'Monitor';
+        evolution.tone = 'bg-amber-100 text-amber-700';
+      }
+      renderResults({ asymmetry, border, color, diameter, evolution, width, height, stats });
+    }
+
+    function buildMoleMask(imageData) {
+      const { data, width, height } = imageData;
+      const pixelCount = width * height;
+      const luminances = new Float32Array(pixelCount);
+      let total = 0;
+      for (let i = 0, p = 0; i < data.length; i += 4, p += 1) {
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+        luminances[p] = lum;
+        total += lum;
+      }
+      const mean = total / pixelCount;
+      let variance = 0;
+      for (let i = 0; i < pixelCount; i += 1) {
+        const diff = luminances[i] - mean;
+        variance += diff * diff;
+      }
+      const std = Math.sqrt(variance / pixelCount);
+      const threshold = mean - std;
+      const mask = new Uint8Array(pixelCount);
+      let moleCount = 0;
+      for (let i = 0; i < pixelCount; i += 1) {
+        if (luminances[i] < threshold) {
+          mask[i] = 1;
+          moleCount += 1;
+        }
+      }
+      if (moleCount === 0 && std < 5) {
+        return { mask: null, stats: { moleCount: 0, mean, std, threshold } };
+      }
+      return { mask, stats: { moleCount, mean, std, threshold } };
+    }
+
+    function getBoundingBox(mask, width, height) {
+      let minX = width;
+      let minY = height;
+      let maxX = -1;
+      let maxY = -1;
+      for (let y = 0; y < height; y += 1) {
+        for (let x = 0; x < width; x += 1) {
+          if (mask[y * width + x]) {
+            minX = Math.min(minX, x);
+            minY = Math.min(minY, y);
+            maxX = Math.max(maxX, x);
+            maxY = Math.max(maxY, y);
+          }
+        }
+      }
+      if (maxX < 0) return null;
+      return {
+        x: minX,
+        y: minY,
+        width: maxX - minX + 1,
+        height: maxY - minY + 1,
+        maxX,
+        maxY,
+      };
+    }
+
+    /**
+     * Calculate mole asymmetry score across horizontal and vertical axes.
+     * @param {Uint8Array} mask
+     * @param {number} width
+     * @param {number} height
+     * @param {{x:number,y:number,width:number,height:number}} bbox
+     * @returns {{score:number,interpretation:string,badge:string,tone:string}}
+     */
+    function analyzeAsymmetry(mask, width, height, bbox) {
+      let totalX = 0;
+      let totalY = 0;
+      let count = 0;
+      for (let y = bbox.y; y < bbox.y + bbox.height; y += 1) {
+        for (let x = bbox.x; x < bbox.x + bbox.width; x += 1) {
+          if (mask[y * width + x]) {
+            totalX += x;
+            totalY += y;
+            count += 1;
+          }
+        }
+      }
+      const centroidX = count ? totalX / count : bbox.x + bbox.width / 2;
+      const centroidY = count ? totalY / count : bbox.y + bbox.height / 2;
+      let left = 0;
+      let right = 0;
+      let top = 0;
+      let bottom = 0;
+      for (let y = bbox.y; y < bbox.y + bbox.height; y += 1) {
+        for (let x = bbox.x; x < bbox.x + bbox.width; x += 1) {
+          if (!mask[y * width + x]) continue;
+          if (x <= centroidX) left += 1;
+          else right += 1;
+          if (y <= centroidY) top += 1;
+          else bottom += 1;
+        }
+      }
+      const horizontalScore = left === 0 || right === 0 ? 1 : 1 - Math.min(left, right) / Math.max(left, right);
+      const verticalScore = top === 0 || bottom === 0 ? 1 : 1 - Math.min(top, bottom) / Math.max(top, bottom);
+      const score = Math.min(1, (horizontalScore + verticalScore) / 2);
+      const flag = score > 0.2 ? 'Consult a dermatologist' : 'Monitor';
+      const tone = score > 0.2 ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700';
+      const interpretation = score > 0.2 ? 'The mole shows noticeable asymmetry and may warrant specialist review.' : 'The mole is relatively symmetric in this view.';
+      return { score, interpretation, badge: flag, tone };
+    }
+
+    /**
+     * Determine border irregularity from the binary mole mask.
+     * @param {Uint8Array} mask
+     * @param {number} width
+     * @param {number} height
+     * @param {{x:number,y:number,width:number,height:number}} bbox
+     * @returns {{ratio:number,interpretation:string,badge:string,tone:string,borderPixels:number,perimeter:number}}
+     */
+    function analyzeBorder(mask, width, height, bbox) {
+      let borderPixels = 0;
+      for (let y = bbox.y; y < bbox.y + bbox.height; y += 1) {
+        for (let x = bbox.x; x < bbox.x + bbox.width; x += 1) {
+          if (!mask[y * width + x]) continue;
+          const neighbors = [
+            [x - 1, y],
+            [x + 1, y],
+            [x, y - 1],
+            [x, y + 1],
+          ];
+          for (const [nx, ny] of neighbors) {
+            if (nx < 0 || nx >= width || ny < 0 || ny >= height || !mask[ny * width + nx]) {
+              borderPixels += 1;
+              break;
+            }
+          }
+        }
+      }
+      const perimeter = 2 * (bbox.width + bbox.height);
+      const ratio = perimeter > 0 ? borderPixels / perimeter : 0;
+      const flag = ratio > 2.0 ? 'Consult a dermatologist' : 'Monitor';
+      const tone = ratio > 2.0 ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700';
+      const interpretation = ratio > 2.0 ? 'The mole border appears irregular and jagged compared to a smooth outline.' : 'Border shape is relatively regular for this mask.';
+      return { ratio, borderPixels, perimeter, interpretation, badge: flag, tone };
+    }
+
+    /**
+     * Compute color variation among mole pixels and a dominant hue bucket.
+     * @param {ImageData} imageData
+     * @param {Uint8Array} mask
+     * @returns {{score:number,interpretation:string,badge:string,tone:string,hueBucket:string}}
+     */
+    function analyzeColor(imageData, mask) {
+      const { data, width } = imageData;
+      let rSum = 0;
+      let gSum = 0;
+      let bSum = 0;
+      let count = 0;
+      const reds = [];
+      const greens = [];
+      const blues = [];
+      const bucketCounts = {
+        brown: 0,
+        black: 0,
+        red: 0,
+        'white/grey': 0,
+        'blue-grey': 0,
+      };
+      for (let i = 0, p = 0; i < data.length; i += 4, p += 1) {
+        if (!mask[p]) continue;
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        rSum += r;
+        gSum += g;
+        bSum += b;
+        reds.push(r);
+        greens.push(g);
+        blues.push(b);
+        count += 1;
+      }
+      const avgR = rSum / Math.max(count, 1);
+      const avgG = gSum / Math.max(count, 1);
+      const avgB = bSum / Math.max(count, 1);
+      const stdR = standardDeviation(reds, avgR);
+      const stdG = standardDeviation(greens, avgG);
+      const stdB = standardDeviation(blues, avgB);
+      for (let i = 0, p = 0; i < data.length; i += 4, p += 1) {
+        if (!mask[p]) continue;
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        const { h, s, l } = rgbToHsl(r, g, b);
+        if (l < 0.18) {
+          bucketCounts.black += 1;
+        } else if (s < 0.18 && l > 0.35) {
+          bucketCounts['white/grey'] += 1;
+        } else if ((h >= 330 || h <= 20) && s > 0.2) {
+          bucketCounts.red += 1;
+        } else if (h >= 180 && h <= 260 && s > 0.15) {
+          bucketCounts['blue-grey'] += 1;
+        } else {
+          bucketCounts.brown += 1;
+        }
+      }
+      const hueBucket = Object.keys(bucketCounts).reduce((best, key) => bucketCounts[key] > bucketCounts[best] ? key : best, 'brown');
+      const score = (stdR + stdG + stdB) / 3;
+      const flag = score > 30 ? 'Consult a dermatologist' : 'Monitor';
+      const tone = score > 30 ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700';
+      const interpretation = score > 30 ? 'Color variation is elevated, suggesting multiple tones within the mole.' : 'Color variation is modest within the detected mole region.';
+      return { score, hueBucket, interpretation, badge: flag, tone };
+    }
+
+    function standardDeviation(values, mean) {
+      if (!values.length) return 0;
+      let total = 0;
+      for (const value of values) {
+        const diff = value - mean;
+        total += diff * diff;
+      }
+      return Math.sqrt(total / values.length);
+    }
+
+    function rgbToHsl(r, g, b) {
+      r /= 255;
+      g /= 255;
+      b /= 255;
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      let h = 0;
+      let s = 0;
+      const l = (max + min) / 2;
+      const delta = max - min;
+      if (delta !== 0) {
+        s = delta / (1 - Math.abs(2 * l - 1));
+        switch (max) {
+          case r:
+            h = ((g - b) / delta) % 6;
+            break;
+          case g:
+            h = (b - r) / delta + 2;
+            break;
+          case b:
+            h = (r - g) / delta + 4;
+            break;
+        }
+        h *= 60;
+        if (h < 0) h += 360;
+      }
+      return { h, s, l };
+    }
+
+    function analyzeDiameter(bbox) {
+      const diameter = Math.max(bbox.width, bbox.height);
+      const interpretation = 'Estimated diameter in pixels based on bounding box. Cannot convert to mm without a reference scale.';
+      return { diameter, interpretation, badge: 'Monitor', tone: 'bg-amber-100 text-amber-700' };
+    }
+
+    function renderResults({ asymmetry, border, color, diameter, evolution, width, height, stats }) {
+      analysisDetails.classList.remove('hidden');
+      resultCards.innerHTML = '';
+      resultSummary.innerHTML = `
+        <div class="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+          <p class="text-sm text-slate-600">Image size: ${width}×${height} pixels. Mole pixels detected: ${stats.moleCount}. Threshold: ${stats.threshold.toFixed(1)}.</p>
+          <p class="mt-2 text-sm text-slate-600">This analysis is algorithmic and approximate; it is not a substitute for medical advice.</p>
+        </div>
+      `;
+      const cards = [
+        {
+          letter: 'A',
+          title: 'Asymmetry',
+          value: `Score ${asymmetry.score.toFixed(2)}`,
+          text: asymmetry.interpretation,
+          badge: asymmetry.badge,
+          tone: asymmetry.tone,
+        },
+        {
+          letter: 'B',
+          title: 'Border',
+          value: `Ratio ${border.ratio.toFixed(2)}`,
+          text: `${border.interpretation} (${border.borderPixels} border pixels, perimeter ${border.perimeter}).`,
+          badge: border.badge,
+          tone: border.tone,
+        },
+        {
+          letter: 'C',
+          title: 'Color',
+          value: `Variation ${color.score.toFixed(1)}, dominant ${color.hueBucket}`,
+          text: color.interpretation,
+          badge: color.badge,
+          tone: color.tone,
+        },
+        {
+          letter: 'D',
+          title: 'Diameter',
+          value: `${diameter.diameter}px`,
+          text: `${diameter.interpretation} A mole larger than approximately 6mm (the size of a pencil eraser) warrants evaluation.`,
+          badge: diameter.badge,
+          tone: diameter.tone,
+        },
+        {
+          letter: 'E',
+          title: 'Evolution',
+          value: 'Not assessed',
+          text: evolution.note,
+          badge: evolution.badge,
+          tone: evolution.tone,
+        },
+      ];
+      for (const card of cards) {
+        const section = document.createElement('div');
+        section.className = 'rounded-3xl border border-slate-200 bg-slate-50 p-5';
+        section.innerHTML = `
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p class="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">${card.letter} • ${card.title}</p>
+              <p class="mt-2 text-lg font-semibold text-slate-900">${card.value}</p>
+            </div>
+            <span class="badge ${card.tone}">${card.badge}</span>
+          </div>
+          <p class="mt-4 text-sm leading-6 text-slate-600">${card.text}</p>
+        `;
+        resultCards.appendChild(section);
+      }
+    }
+
+    dropZone.addEventListener('dragover', (event) => {
+      event.preventDefault();
+      dropZone.classList.add('border-slate-500', 'bg-slate-100');
+    });
+    dropZone.addEventListener('dragleave', () => {
+      dropZone.classList.remove('border-slate-500', 'bg-slate-100');
+    });
+    dropZone.addEventListener('drop', (event) => {
+      event.preventDefault();
+      dropZone.classList.remove('border-slate-500', 'bg-slate-100');
+      const file = event.dataTransfer.files[0];
+      if (file) {
+        fileInput.files = event.dataTransfer.files;
+        handleFile(file);
+      }
+    });
+
+    fileInput.addEventListener('change', () => {
+      const file = fileInput.files[0];
+      handleFile(file);
+    });
+    analyzeButton.addEventListener('click', analyzeImage);
+  </script>
+</body>
+</html>
